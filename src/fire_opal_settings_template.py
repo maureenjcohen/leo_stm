@@ -37,7 +37,7 @@ wcs_goes_to = 'C:/Users/inner_000/Desktop/Research/Fire_Opal/detected_streaks/wc
 
 # An API key is needed to access astrometry.net. The API key is linked
 # to a specific user account.
-apikey = 'pyityxgpucpdofbg'
+apikey = ''
 
 
 
