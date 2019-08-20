@@ -20,6 +20,8 @@ from fire_opal_settings import *
 import numpy as np
 from itertools import groupby
 
+# Commented out for now - this requires the orbitdeterminator package to have been installed
+# import orbitdeterminator.kep_determination.gauss_method as gm
 
 class StreakyImage:
     
@@ -139,14 +141,17 @@ def deg2HMS(ra, dec):
         rminutes = '0' + str(raM)
     else:
         rminutes = str(raM)
-    raS = round(((((ra/15)-raH)*60)-raM)*60) # Seconds
+    raS = int(((((ra/15)-raH)*60)-raM)*60) # Seconds
     if raS < 10:
         rseconds = '0' + str(raS)
     else:
         rseconds = str(raS)
-    RA = '{0}{1}{2}'.format(rhours, rminutes, rseconds)
-    # Six-digit string consisting of HHMMSS
-  
+
+    raTs = round(((((((ra/15)-raH)*60)-raM)*60)-raS)*10) # tenths of a second
+    rtseconds = str(raTs)
+
+    RA = '{0}{1}{2}{3}'.format(rhours, rminutes, rseconds, rtseconds)
+    # Seven-digit string consisting of HHMMSSs
     return str(RA+DEC)
 
 list_of_streaky_images = []
@@ -234,17 +239,22 @@ for sat in list_of_satellites:
         for point in sat:
             prefix = '99999 99 999999 1234 E ' 
             # 9's are fillers, 1234 is the station code
-            datetag = (point.filename[4:8] + point.filename[9:11] + point.filename[12:14] + str(point.time).replace(':','')).replace(' ','')
+            datetag = (point.filename[4:8] + point.filename[9:11] + point.filename[12:14] + str(point.time).replace(':','')).replace(' ','') + '000'
             # Creates date and time from filename and time
-            timeunc = ' 00 00 '
-            # Time uncertainty, filler
+            timeunc = ' 28 15 '
+            # Time uncertainty (28 = 2sec), angle format code (1 = HHMMSSs+DDMMSS) and epoch code (5 = 2000)
             ra_dec = deg2HMS(point.ra, point.dec)
             # RA and DEC converted into IOD format
-            suffix = ' 00 S\n' 
-            # Positional uncertainty, filler
+            suffix = ' 99 S\n'
+            # Positional uncertainty (99 = 90 arcseconds), and optical code (S = steady)
             file_line = prefix + datetag + timeunc + ra_dec + suffix
             txtFile.write(file_line)
         txtFile.close()
 # Creates a separate txt file for each satellite. Txt file contains the
 # (ra, dec, time) points for the satellite in IOD format.
-        
+
+# Solve the orbit determination using the orbitdeterminator library
+# x = a, e, taup, I, W, w, T
+# x = gm.gauss_method_sat('path/to/satellite/file.txt', refiters=10)
+
+
