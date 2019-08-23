@@ -19,9 +19,9 @@ Requirements:
 from fire_opal_settings import *
 import numpy as np
 from itertools import groupby
+import more_itertools as mit
 
-# Commented out for now - this requires the orbitdeterminator package to have been installed
-# import orbitdeterminator.kep_determination.gauss_method as gm
+
 
 class StreakyImage:
     
@@ -31,10 +31,11 @@ class StreakyImage:
     Streak objects.
     
     """
-    def __init__(self, filename, timestamp, streak):
+    def __init__(self, filename, timestamp, streak, serialno):
         self.filename = filename
         self.timestamp = timestamp
         self.streak = streak
+        self.serialno = serialno
     
     def __repr__(self):
         return "StreakyImage()"
@@ -141,17 +142,17 @@ def deg2HMS(ra, dec):
         rminutes = '0' + str(raM)
     else:
         rminutes = str(raM)
-    raS = int(((((ra/15)-raH)*60)-raM)*60) # Seconds
+    raS = round(((((ra/15)-raH)*60)-raM)*60) # Seconds
     if raS < 10:
         rseconds = '0' + str(raS)
     else:
         rseconds = str(raS)
-
-    raTs = round(((((((ra/15)-raH)*60)-raM)*60)-raS)*10) # tenths of a second
+    raTs = abs(round(((((((ra/15)-raH)*60)-raM)*60)-raS)*10)) # tenths of a second        
     rtseconds = str(raTs)
 
     RA = '{0}{1}{2}{3}'.format(rhours, rminutes, rseconds, rtseconds)
     # Seven-digit string consisting of HHMMSSs
+  
     return str(RA+DEC)
 
 list_of_streaky_images = []
@@ -166,34 +167,56 @@ data = open(streaks_data, 'r')
 # Opens txt file where data from Fire Opal image processing is stored
 extracted_data = data.readlines()
 # Creates list of lines in the txt file as list of strings
-for line_of_data in extracted_data:
+remove_duplicates = list(dict.fromkeys(extracted_data))
+# Converts data into a dictionary and then back into a list to remove duplicates
+for line_of_data in remove_duplicates:
     get_data = line_of_data.split(',') # List of data points in a line
-    one_streak = Streak(get_data[0], get_data[1], float(get_data[2]), float(get_data[3]), float(get_data[4]), float(get_data[5]), float(get_data[6]), float(get_data[7]), float(get_data[8]), float(get_data[9]), get_data[10], get_data[11], floor_scale*float(get_data[12]), float(get_data[13]))
+    serialno = int(get_data[0][28:32])
+    one_streak = Streak(get_data[0], get_data[1], float(get_data[2]), float(get_data[3]), float(get_data[4]), float(get_data[5]), float(get_data[6]), float(get_data[7]), float(get_data[8]), float(get_data[9]), get_data[10], get_data[11], float(get_data[12]), float(get_data[13]))
     # Assigns extracted data to a Streak data object. See fire_opal_settings.py
     # for note about floor_scale, which is multiplying the slope of the streak.
-    streak_image = StreakyImage(get_data[0], get_data[1], one_streak)
+    streak_image = StreakyImage(get_data[0], get_data[1], one_streak, serialno)
     # Assigns Streak object to a Streaky Image object
     list_of_streaky_images.append(streak_image)
     # Creates list of Streaky Image objects
 
 """ Identification of satellite trail over multiple images """
-slope_list = []
-for streakyimage in list_of_streaky_images:
-    slope_list.append(streakyimage.streak.slope)
-# Creates a list of slopes of all streaks
+#slope_list = []
+#for streakyimage in list_of_streaky_images:
+#    slope_list.append(streakyimage.streak.slope)
+## Creates a list of slopes of all streaks
 
-groups = []  
-for key, group in groupby(slope_list, np.floor):
-    groups.append(list(group))
-# Creates list of groups of slope values, e.g. [[2.1, 2.5, 2.3], [45.6, 45.8, 45.3]]
-# Streaks with the same slope are assumed to be the same streak
-    
+#groups = []  
+#for key, group in groupby(slope_list, np.floor):
+#    groups.append(list(group))
+## Creates list of groups of slope values, e.g. [[2.1, 2.5, 2.3], [45.6, 45.8, 45.3]]
+## Streaks with the same slope are assumed to be the same streak
+
+serialno_list = []
+for streakyimage in list_of_streaky_images:
+    serialno_list.append(streakyimage.serialno)
+# Creates a list of image serial numbers from all images
+unique_satellites = []
+for group in mit.consecutive_groups(serialno_list):
+    unique_satellites.append(list(group))
+# Creates a list of lists - each sublist is a grouping of consecutive serial
+# numbers, e.g. [[196, 197, 198], [943, 944], [1112, 1113, 1114, 1115], ...]    
+satellites_with_enough_data = []
+for sat in unique_satellites:
+    if len(sat) < 2:
+        continue
+    else:
+        satellites_with_enough_data.append(sat)
+# We need at least two images of the same streak for the orbit determination.
+# This code discards satellites for which we have only one image.
+        
+
 """ Determination of direction of satellite trail """
 
-for j in range(0,len(groups)): # Selects one group at a time
+for j in range(0,len(satellites_with_enough_data)): # Selects one group at a time
     images_with_same_streak = [] 
     for streakyimage in list_of_streaky_images:        
-        if streakyimage.streak.slope in groups[j]:
+        if streakyimage.serialno in satellites_with_enough_data[j]:
             images_with_same_streak.append(streakyimage)
     # Creates a list of StreakyImage objects that contain the same streak (i.e.
     # streaks have the same slope).StreakyImage objects are appended in 
@@ -239,22 +262,18 @@ for sat in list_of_satellites:
         for point in sat:
             prefix = '99999 99 999999 1234 E ' 
             # 9's are fillers, 1234 is the station code
-            datetag = (point.filename[4:8] + point.filename[9:11] + point.filename[12:14] + str(point.time).replace(':','')).replace(' ','') + '000'
+            datetag = (point.filename[4:8] + point.filename[9:11] + point.filename[12:14] + str(point.time).replace(':','')).replace(' ','')
             # Creates date and time from filename and time
+            millisecs = '000'
             timeunc = ' 28 15 '
-            # Time uncertainty (28 = 2sec), angle format code (1 = HHMMSSs+DDMMSS) and epoch code (5 = 2000)
+            # Time uncertainty, filler
             ra_dec = deg2HMS(point.ra, point.dec)
             # RA and DEC converted into IOD format
-            suffix = ' 99 S\n'
-            # Positional uncertainty (99 = 90 arcseconds), and optical code (S = steady)
-            file_line = prefix + datetag + timeunc + ra_dec + suffix
+            suffix = ' 99 S\n' 
+            # Positional uncertainty, filler
+            file_line = prefix + datetag + millisecs + timeunc + ra_dec + suffix
             txtFile.write(file_line)
         txtFile.close()
 # Creates a separate txt file for each satellite. Txt file contains the
 # (ra, dec, time) points for the satellite in IOD format.
-
-# Solve the orbit determination using the orbitdeterminator library
-# x = a, e, taup, I, W, w, T
-# x = gm.gauss_method_sat('path/to/satellite/file.txt', refiters=10)
-
-
+        
